@@ -1,5 +1,4 @@
 const { CronJob } = require("cron");
-
 const JSON5 = require("json5");
 const file = require("node:fs");
 
@@ -18,8 +17,7 @@ const WeekliesReminder = require("./weeklies-reminder/index.js");
 let config;
 try {
 	config = JSON5.parse(file.readFileSync("./config.json5"));
-}
-catch {
+} catch {
 	config = JSON5.parse(file.readFileSync("./default.config.json5"));
 }
 
@@ -43,53 +41,45 @@ const BlacklistedCrons = [
 	"weekliesReminder"
 ];
 
+let crons = [];
+
 const initCrons = () => {
 	const { blacklist = [], whitelist = [] } = config.crons;
 	if (blacklist.length > 0 && whitelist.length > 0) {
 		throw new Error(`Cannot have both a blacklist and a whitelist for crons`);
 	}
 
-	const crons = [];
+	crons = [];
 	for (const definition of definitions) {
-		if (blacklist.length > 0 && blacklist.includes(definition.name)) {
-			continue;
-		}
-		else if (whitelist.length > 0 && !whitelist.includes(definition.name)) {
-			continue;
-		}
-		else if (BlacklistedCrons.includes(definition.name)) {
-			const name = app.Utils.convertCase(definition.name, "kebab", "camel");
-
-			const expression = definition.expression;
-			const job = new CronJob(expression, () => definition.code());
-			job.start();
-
-			crons.job = job;
-			crons.push({ name, job });
-
-			continue;
-		}
-
-		const cron = {
-			name: definition.name,
-			description: definition.description,
-			code: definition.code
-		};
+		if (blacklist.length > 0 && blacklist.includes(definition.name)) continue;
+		if (whitelist.length > 0 && !whitelist.includes(definition.name)) continue;
 
 		const name = app.Utils.convertCase(definition.name, "kebab", "camel");
-
 		const expression = config.crons[name] || definition.expression;
-		const job = new CronJob(expression, () => cron.code(cron));
+		const taskFn = definition.code;
+
+		const job = new CronJob(expression, () => taskFn());
 		job.start();
 
-		crons.job = job;
-		crons.push(cron);
+		crons.push({ name, job, task: taskFn });
 	}
 
 	app.Logger.info("Cron", `Initialized ${crons.length} cron jobs`);
 	return crons;
 };
 
+const runCrons = async () => {
+	for (const cron of crons) {
+		try {
+			app.Logger.info("Cron", `Running ${cron.name}`);
+			await cron.task();
+		} catch (err) {
+			app.Logger.error("Cron", `Error running ${cron.name}: ${err.message}`);
+		}
+	}
+};
+
 module.exports = {
-	initCrons
+	initCrons,
+	runCrons
 };
