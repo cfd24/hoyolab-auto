@@ -18,114 +18,114 @@ const RegionalTaskManager = require("./object/regional-task-manager.js");
 
 let config;
 try {
-	config = JSON5.parse(file.readFileSync("./config.json5"));
-}
-catch (e) {
-	if (file.existsSync("./config.json5") === false) {
-		throw new Error({
-			message: `No config file (config.json5) was found. Please follow the setup instructions on https://github.com/torikushiii/hoyolab-auto?tab=readme-ov-file#installation \n${e}`
-		});
-	}
+  config = JSON5.parse(file.readFileSync("./config.json5"));
+} catch (e) {
+  if (file.existsSync("./config.json5") === false) {
+    throw new Error({
+      message: `No config file (config.json5) was found. Please follow the setup instructions on https://github.com/torikushiii/hoyolab-auto?tab=readme-ov-file#installation \n${e}`,
+    });
+  }
 
-	throw new Error({
-		message: `An error occurred when reading your configuration file. Please check and fix the following error:\n${e}`
-	});
+  throw new Error({
+    message: `An error occurred when reading your configuration file. Please check and fix the following error:\n${e}`,
+  });
 }
 
 (async () => {
-	const start = process.hrtime.bigint();
+  const start = process.hrtime.bigint();
 
-	const platformsConfig = config.platforms;
-	if (!platformsConfig || platformsConfig.length === 0) {
-		console.warn("No platforms configured! Exiting.");
-		process.exit(0);
-	}
+  const platformsConfig = config.platforms;
+  if (!platformsConfig || platformsConfig.length === 0) {
+    console.warn("No platforms configured! Exiting.");
+    process.exit(0);
+  }
 
-	globalThis.app = {
-		Date,
-		Error,
-		RegionalTaskManager,
+  globalThis.app = {
+    Date,
+    Error,
+    RegionalTaskManager,
 
-		Config,
-		Command,
+    Config,
+    Command,
 
-		Got: await Got.initialize(),
-		Cache: new Cache(),
-		Logger: new Logger(config.loglevel),
-		Utils: new Utils()
-	};
+    Got: await Got.initialize(),
+    Cache: new Cache(),
+    Logger: new Logger(config.loglevel),
+    Utils: new Utils(),
+  };
 
-	app.Logger.info("Client", "Loading configuration data");
-	Config.load(config);
-	app.Logger.info("Client", `Loaded ${Config.data.size} configuration entries`);
+  app.Logger.info("Client", "Loading configuration data");
+  Config.load(config);
+  app.Logger.info("Client", `Loaded ${Config.data.size} configuration entries`);
 
-	const { loadCommands } = require("./commands/index.js");
-	const commands = await loadCommands();
-	await Command.importData(commands.definitions);
+  const { loadCommands } = require("./commands/index.js");
+  const commands = await loadCommands();
+  await Command.importData(commands.definitions);
 
-	const { initCrons } = require("./crons/index.js");
-	initCrons();
+  // ⬇️ Replace cron init with single-run logic
+  const { runCrons } = require("./crons/index.js");
 
-	const accountsConfig = config.accounts;
-	if (!accountsConfig || accountsConfig.length === 0) {
-		app.Logger.warn("Client", "No accounts configured! Exiting.");
-		process.exit(0);
-	}
+  const accountsConfig = config.accounts;
+  if (!accountsConfig || accountsConfig.length === 0) {
+    app.Logger.warn("Client", "No accounts configured! Exiting.");
+    process.exit(0);
+  }
 
-	const accounts = new Set();
-	for (const definition of accountsConfig) {
-		if (!definition.active) {
-			app.Logger.warn("Client", `Skipping ${definition.type} account (inactive)`);
-			continue;
-		}
+  const accounts = new Set();
+  for (const definition of accountsConfig) {
+    if (!definition.active) {
+      app.Logger.warn("Client", `Skipping ${definition.type} account (inactive)`);
+      continue;
+    }
 
-		accounts.add(HoyoLab.create(definition.type, definition));
-	}
+    accounts.add(HoyoLab.create(definition.type, definition));
+  }
 
-	const definitions = require("./gots/index.js");
-	await app.Got.importData(definitions);
+  const definitions = require("./gots/index.js");
+  await app.Got.importData(definitions);
 
-	globalThis.app = {
-		...app,
-		Platform,
-		HoyoLab
-	};
+  globalThis.app = {
+    ...app,
+    Platform,
+    HoyoLab,
+  };
 
-	const hoyoPromises = [];
-	for (const account of accounts) {
-		hoyoPromises.push(account.login());
-	}
+  const hoyoPromises = [];
+  for (const account of accounts) {
+    hoyoPromises.push(account.login());
+  }
 
-	await Promise.all(hoyoPromises);
+  await Promise.all(hoyoPromises);
 
-	const platforms = new Set();
-	for (const definition of platformsConfig) {
-		if (!definition.active) {
-			app.Logger.warn("Client", `Skipping ${definition.type} platform (inactive)`);
-			continue;
-		}
+  const platforms = new Set();
+  for (const definition of platformsConfig) {
+    if (!definition.active) {
+      app.Logger.warn("Client", `Skipping ${definition.type} platform (inactive)`);
+      continue;
+    }
 
-		platforms.add(Platform.create(definition.type, definition));
-	}
+    platforms.add(Platform.create(definition.type, definition));
+  }
 
-	const promises = [];
-	for (const platform of platforms) {
-		promises.push(platform.connect());
-	}
+  const promises = [];
+  for (const platform of platforms) {
+    promises.push(platform.connect());
+  }
 
-	await Promise.all(promises);
+  await Promise.all(promises);
 
-	const end = process.hrtime.bigint();
-	app.Logger.info("Client", `Initialize completed (${Number(end - start) / 1e6}ms)`);
+  const end = process.hrtime.bigint();
+  app.Logger.info("Client", `Initialize completed (${Number(end - start) / 1e6}ms)`);
 
-	process.on("unhandledRejection", (reason) => {
-		if (!(reason instanceof Error)) {
-			return;
-		}
+  // ⬇️ Run all scheduled tasks immediately and exit
+  await runCrons();
 
-		app.Logger.log("Client", {
-			message: "Unhandled promise rejection",
-			args: { reason }
-		});
-	});
+  process.on("unhandledRejection", (reason) => {
+    if (!(reason instanceof Error)) return;
+
+    app.Logger.log("Client", {
+      message: "Unhandled promise rejection",
+      args: { reason },
+    });
+  });
 })();
