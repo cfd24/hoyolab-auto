@@ -20,7 +20,7 @@ let config;
 try {
   config = JSON5.parse(file.readFileSync("./config.json5"));
 } catch (e) {
-  if (file.existsSync("./config.json5") === false) {
+  if (!file.existsSync("./config.json5")) {
     throw new Error({
       message: `No config file (config.json5) was found. Please follow the setup instructions on https://github.com/torikushiii/hoyolab-auto?tab=readme-ov-file#installation \n${e}`,
     });
@@ -62,7 +62,6 @@ try {
   const commands = await loadCommands();
   await Command.importData(commands.definitions);
 
-  // ⬇️ Replace cron init with single-run logic
   const { runCrons } = require("./crons/index.js");
 
   const accountsConfig = config.accounts;
@@ -77,7 +76,6 @@ try {
       app.Logger.warn("Client", `Skipping ${definition.type} account (inactive)`);
       continue;
     }
-
     accounts.add(HoyoLab.create(definition.type, definition));
   }
 
@@ -94,7 +92,6 @@ try {
   for (const account of accounts) {
     hoyoPromises.push(account.login());
   }
-
   await Promise.all(hoyoPromises);
 
   const platforms = new Set();
@@ -103,7 +100,6 @@ try {
       app.Logger.warn("Client", `Skipping ${definition.type} platform (inactive)`);
       continue;
     }
-
     platforms.add(Platform.create(definition.type, definition));
   }
 
@@ -111,18 +107,15 @@ try {
   for (const platform of platforms) {
     promises.push(platform.connect());
   }
-
   await Promise.all(promises);
 
   const end = process.hrtime.bigint();
   app.Logger.info("Client", `Initialize completed (${Number(end - start) / 1e6}ms)`);
 
-  // ⬇️ Run all scheduled tasks immediately and exit
   await runCrons();
 
   process.on("unhandledRejection", (reason) => {
     if (!(reason instanceof Error)) return;
-
     app.Logger.log("Client", {
       message: "Unhandled promise rejection",
       args: { reason },
