@@ -1,0 +1,27 @@
+name: HoyoLab Auto Bot
+
+on:
+  schedule:
+    - cron: "0 16 * * *"  # runs daily at 16:00 UTC (adjust if needed)
+  workflow_dispatch:
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Restore config
+        run: |
+          echo "${{ secrets.CONFIG_JSON_B64 }}" | base64 -d > config.json5
+
+      - name: Run the bot
+        run: node index.js
